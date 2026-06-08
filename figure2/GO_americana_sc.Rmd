@@ -1,0 +1,387 @@
+---
+title: "GO_americana_sc"
+author: "David Bellini"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Load Libraries
+
+```{r libraries}
+library(tidyverse)
+library(Seurat)
+library(escape)
+library(UCell)
+library(clusterProfiler)
+library(edgeR)
+library(GO.db)
+library(dittoSeq)
+
+# Explicitly prevent function masking
+select <- dplyr::select
+rename <- dplyr::rename
+filter <- dplyr::filter
+```
+
+# Step 3: Format eggNOG Annotations
+
+```{r format-annotations}
+# Read eggNOG-mapper output
+eggnog <- read_tsv("eggnog_files/out.emapper.annotations",
+                   skip = 4, comment = "##")
+
+# Read protein-to-gene mapping
+prot_to_gene <- read_tsv("sa2_headers_prot.tsv", col_names = c("protein_id", "gene_id"))
+
+# Clean eggNOG query IDs - remove prefix like "ngl|WGS:ZZZZ|"
+eggnog <- eggnog %>%
+  mutate(`#query` = str_remove(`#query`, "^.*\\|"))
+
+# Extract GO annotations
+go_annotations <- eggnog %>%
+  dplyr::select(query = `#query`, GOs) %>%
+  filter(!is.na(GOs), GOs != "") %>%
+  separate_rows(GOs, sep = ",") %>%
+  dplyr::rename(GO = GOs) %>%
+  # Convert protein IDs to gene IDs
+  left_join(prot_to_gene, by = c("query" = "protein_id")) %>%
+  filter(!is.na(gene_id)) %>%
+  dplyr::select(query = gene_id, GO)
+
+# Create TERM2GENE and TERM2NAME for GO
+term2gene_go <- go_annotations %>%
+  dplyr::select(GO, query)
+
+go_terms <- AnnotationDbi::select(GO.db, 
+                                  keys = unique(term2gene_go$GO),
+                                  columns = c("GOID", "TERM"),
+                                  keytype = "GOID")
+term2name_go <- go_terms %>%
+  dplyr::rename(GO = GOID, Description = TERM)
+
+# Extract KEGG annotations
+kegg_annotations <- eggnog %>%
+  dplyr::select(query = `#query`, KEGG_ko, KEGG_Pathway) %>%
+  filter(!is.na(KEGG_ko), KEGG_ko != "") %>%
+  separate_rows(KEGG_ko, sep = ",") %>%
+  mutate(KEGG_ko = str_remove(KEGG_ko, "ko:")) %>%
+  dplyr::rename(KEGG = KEGG_ko) %>%
+  # Convert protein IDs to gene IDs
+  left_join(prot_to_gene, by = c("query" = "protein_id")) %>%
+  filter(!is.na(gene_id)) %>%
+  dplyr::select(query = gene_id, KEGG, KEGG_Pathway)
+
+# Create TERM2GENE and TERM2NAME for KEGG
+term2gene_kegg <- kegg_annotations %>%
+  dplyr::select(KEGG, query)
+
+kegg_pathways <- eggnog %>%
+  dplyr::select(KEGG_Pathway) %>%
+  filter(!is.na(KEGG_Pathway), KEGG_Pathway != "") %>%
+  separate_rows(KEGG_Pathway, sep = ",") %>%
+  distinct() %>%
+  separate(KEGG_Pathway, into = c("KEGG", "Description"), 
+           sep = ":", extra = "merge", fill = "right") %>%
+  mutate(KEGG = str_remove(KEGG, "ko"),
+         Description = str_trim(Description))
+
+term2name_kegg <- kegg_pathways
+
+# Save annotations
+save(term2gene_go, term2name_go, 
+     term2gene_kegg, term2name_kegg,
+     file = "locust_annotations.RData")
+```
+
+```{r interlude}
+library(Seurat)
+options(Seurat.object.assay.version = "v3")
+gffkey = read_tsv("/home/davidbellini/OneDrive/gabbiani/PROJECTS/americana_atlas3/R_analysis/americana_gffKey_bellini2026.tsv")
+seurat_obj <- readRDS("/home/davidbellini/OneDrive/gabbiani/PROJECTS/americana_atlas3/R_analysis/sa3_labels_mar31.rds")
+clustermarkers <- FindMarkers(seurat_obj, ident.1 = "T4", ident.2 = "T5", min.pct = 0.1, method="AUC")
+clustermarkers = rownames_to_column(clustermarkers, "Gene") %>% mutate(Gene = gsub("-", "_", Gene))
+markers = left_join(clustermarkers, gffkey, by=c("Gene"="transcript_id"))
+markers = markers %>% arrange(desc(avg_log2FC), p_val)
+markers = markers %>% rename("T4"="pct.1", "T5"="pct.2") %>% filter(abs(avg_log2FC) >= 0.5)
+FeaturePlot(seurat_obj, pt.size = 1, features = "egapxtmp-015520") #TfAP-2
+write_csv(markers, "T4_T5_marker_comparison.csv")
+
+```
+# Step 4: Cell-Level Pathway Scoring
+
+```{r RESUME-POINT 12.3.2025}
+# Resume here
+load("locust_annotations.RData")
+
+```
+
+```{r cell-level-scoring}
+# Load Seurat object
+seurat_obj <- readRDS("/home/davidbellini/OneDrive/gabbiani/PROJECTS/americana_atlas3/R_analysis/sa3_labels_mar31.rds")
+seurat_obj <- UpdateSeuratObject(seurat_obj)
+
+# Set RNA as default assay for pathway analysis (not SCT)
+cat("Available assays:", names(seurat_obj@assays), "\n")
+cat("Current default assay:", DefaultAssay(seurat_obj), "\n")
+DefaultAssay(seurat_obj) <- "RNA"
+cat("Changed to RNA assay\n\n")
+
+# Ensure RNA assay is normalized
+if(!"data" %in% Layers(seurat_obj[["RNA"]])) {
+  cat("Normalizing RNA assay...\n")
+  seurat_obj <- NormalizeData(seurat_obj, assay = "RNA")
+}
+
+# Add active.ident as a metadata column for easier labeling
+seurat_obj$cell_type <- Idents(seurat_obj)
+
+# Check overlap between eggNOG genes and Seurat genes
+seurat_genes <- rownames(seurat_obj)
+eggnog_genes <- unique(term2gene_go$query)
+
+overlap <- intersect(seurat_genes, eggnog_genes)
+cat("Seurat genes:", length(seurat_genes), "\n")
+cat("eggNOG genes:", length(eggnog_genes), "\n")
+cat("Overlap:", length(overlap), "\n")
+cat("Overlap %:", round(100 * length(overlap) / length(seurat_genes), 2), "%\n\n")
+
+# Filter term2gene to only include genes present in Seurat object
+term2gene_go_filtered <- term2gene_go %>%
+  filter(query %in% seurat_genes)
+
+# Create gene set list from GO annotations
+gene_sets_go <- term2gene_go_filtered %>%
+  group_by(GO) %>%
+  summarise(genes = list(query)) %>%
+  deframe()
+
+gene_sets_kegg <- term2gene_kegg %>%
+  filter(query %in% seurat_genes) %>%
+  group_by(KEGG) %>%
+  summarise(genes = list(query)) %>%
+  deframe()
+
+# Filter gene sets to 15-500 genes
+gene_set_sizes <- sapply(gene_sets_go, length)
+gene_sets_go_filtered <- gene_sets_go[gene_set_sizes >= 15 & gene_set_sizes <= 500]
+
+cat("Gene sets after filtering:", length(gene_sets_go_filtered), "\n")
+
+# Run UCell scoring via escape
+seurat_obj <- runEscape(seurat_obj,
+                        gene.sets = gene_sets_go_filtered,
+                        method = "UCell",
+                        new.assay.name = "escape_GO")
+
+# Find most variable pathways across cells (not just first alphabetically!)
+pathway_scores <- GetAssayData(seurat_obj, assay = "escape_GO", layer = "data")
+
+# Calculate variance for each pathway
+pathway_variance <- apply(pathway_scores, 1, var)
+top_variable_pathways <- names(sort(pathway_variance, decreasing = TRUE))[1:20]
+
+# Get descriptions for top variable pathways
+top_pathway_info <- term2name_go %>%
+  filter(GO %in% gsub("escapego_", "", top_variable_pathways)) %>%
+  mutate(GO_clean = gsub("GO:", "", GO),
+         label = paste0(GO, ": ", Description))
+
+cat("\nTop 20 most variable pathways across cells:\n")
+print(as.data.frame(top_pathway_info %>% dplyr::select(GO, Description)), row.names = FALSE)
+
+# Visualize top 4 most variable pathways on UMAP
+top_4_pathways <- top_variable_pathways[1:4]
+
+cat("\n\nVisualizing these 4 pathways on UMAP:\n")
+for(pathway in top_4_pathways) {
+  go_id <- gsub("escapego_", "", pathway)
+  desc <- term2name_go %>% filter(GO == go_id) %>% pull(Description)
+  cat(go_id, ":", desc, "\n")
+}
+
+FeaturePlot(seurat_obj,
+            features = top_4_pathways,
+            reduction = "umap")
+
+# Rename pathways in the Seurat object to have readable descriptions
+# Create a mapping of GO IDs to short descriptions
+pathway_rename_map <- setNames(
+  sapply(top_variable_pathways, function(x) {
+    go_id <- gsub("escapego_", "", x)
+    go_id <- gsub("_", ":", go_id)
+    desc <- term2name_go %>% filter(GO == go_id) %>% pull(Description)
+    if(length(desc) > 0) {
+      # Truncate long descriptions
+      str_trunc(desc, 50)
+    } else {
+      x
+    }
+  }),
+  top_variable_pathways
+)
+
+# Create a modified version of the escape assay with renamed features
+escape_renamed <- seurat_obj[["escape_GO"]]
+rownames(escape_renamed) <- ifelse(rownames(escape_renamed) %in% names(pathway_rename_map),
+                                    pathway_rename_map[rownames(escape_renamed)],
+                                    rownames(escape_renamed))
+seurat_obj[["escape_GO_labeled"]] <- escape_renamed
+
+# Show available cell types
+cat("\nAvailable cell types:\n")
+print(sort(unique(seurat_obj$cell_type)))
+
+# EDIT THIS LIST: Specify which cell types you want to visualize
+cell_types_to_show <- c("TmY5a", "Tm9", "Mi1", "L3", "PR", "T4", "T5")
+# Subset to selected cell types
+seurat_subset <- subset(seurat_obj, subset = cell_type %in% cell_types_to_show)
+
+# Heatmap by cluster (using most variable pathways with readable names)
+# The dendrogram on the left clusters pathways by similarity
+dittoHeatmap(seurat_subset,
+             genes = pathway_rename_map[top_variable_pathways],
+             assay = "escape_GO_labeled",
+             annot.by = "cell_type",
+             scaled.to.max = TRUE,
+             fontsize_row = 7,
+             main = "Pathway Activity Across Selected Cell Types")
+
+# Violin plot by cluster (more reliable than ridge plot)
+VlnPlot(seurat_obj,
+        features = top_variable_pathways[1:6],
+        assay = "escape_GO",
+        ncol = 3,
+        pt.size = 0)
+```
+
+# Step 5: Marker-Based Enrichment (for single-condition atlas)
+
+```{r marker-enrichment}
+# Find marker genes for each cluster
+# This identifies genes that define each cell type
+cat("Finding marker genes for all clusters...\n")
+Idents(seurat_obj) <- seurat_obj$cell_type
+markers <- FindAllMarkers(seurat_obj,
+                          only.pos = TRUE,
+                          min.pct = 0.1,
+                          logfc.threshold = 0.5,
+                          assay = "RNA")
+
+cat("Found", nrow(markers), "marker genes across all clusters\n\n")
+
+# Show top markers per cluster
+top_markers <- markers %>%
+  group_by(cluster) %>%
+  arrange(desc(avg_log2FC)) %>%
+  slice_head(n = 5)
+
+cat("Top 5 markers per cluster:\n")
+print(top_markers %>% dplyr::select(cluster, gene, avg_log2FC, p_val_adj))
+
+# Run GO enrichment for each cluster's markers
+cluster_enrichments <- list()
+
+for(clust in unique(markers$cluster)) {
+  cat("\nEnriching cluster:", clust, "\n")
+
+  # Get significant markers for this cluster
+  cluster_genes <- markers %>%
+    filter(cluster == clust, p_val_adj < 0.05) %>%
+    pull(gene)
+
+  cat("  Markers:", length(cluster_genes), "\n")
+
+  if(length(cluster_genes) >= 10) {  # Need at least 10 genes
+    # GO enrichment
+    enrich_go <- enricher(gene = cluster_genes,
+                          TERM2GENE = term2gene_go,
+                          TERM2NAME = term2name_go,
+                          pvalueCutoff = 0.05,
+                          pAdjustMethod = "BH",
+                          minGSSize = 10,
+                          maxGSSize = 500)
+
+    if(!is.null(enrich_go) && nrow(enrich_go@result) > 0) {
+      cluster_enrichments[[clust]] <- enrich_go
+      cat("  Enriched pathways:", nrow(enrich_go@result), "\n")
+    } else {
+      cat("  No significant enrichment\n")
+    }
+  } else {
+    cat("  Too few markers for enrichment\n")
+  }
+}
+
+# Save enrichment results
+saveRDS(cluster_enrichments, file = "cluster_enrichments.rds")
+saveRDS(markers, file = "cluster_markers.rds")
+```
+
+## Visualize Enrichment Results
+
+```{r visualize-enrichment}
+# Plot enrichment for a specific cluster of interest
+cluster_enrichments = readRDS("cluster_enrichments.rds")
+markers = readRDS("cluster_markers.rds")
+cluster_to_plot <- "PAM"  # Change to your cluster of interest
+
+if(cluster_to_plot %in% names(cluster_enrichments)) {
+  cat("\nShowing enrichment for:", cluster_to_plot, "\n\n")
+
+  # Dotplot
+  print(dotplot(cluster_enrichments[[cluster_to_plot]],
+                showCategory = 20,
+                title = paste0("GO Enrichment: ", cluster_to_plot)))
+
+  # Barplot
+  print(barplot(cluster_enrichments[[cluster_to_plot]],
+                showCategory = 15,
+                title = paste0("GO Enrichment: ", cluster_to_plot)))
+}
+
+# Compare enrichment across SELECTED clusters
+if(length(cluster_enrichments) > 0) {
+  # EDIT THIS: Choose specific clusters to compare (use same as heatmap)
+  clusters_to_compare <- c("TmY5a", "Tm9", "Mi1", "L3", "PR")
+
+  # Filter to clusters that have enrichment results
+  clusters_to_compare <- clusters_to_compare[clusters_to_compare %in% names(cluster_enrichments)]
+
+  if(length(clusters_to_compare) > 1) {
+    # Prepare marker genes for selected clusters only
+    cluster_marker_lists <- list()
+    for(clust in clusters_to_compare) {
+      cluster_marker_lists[[clust]] <- markers %>%
+        filter(cluster == clust, p_val_adj < 0.05) %>%
+        pull(gene)
+    }
+
+    # Compare enrichment across selected clusters
+    cat("\nComparing enrichment across selected clusters...\n")
+    comparison <- compareCluster(geneCluster = cluster_marker_lists,
+                                 fun = "enricher",
+                                 TERM2GENE = term2gene_go,
+                                 TERM2NAME = term2name_go,
+                                 pvalueCutoff = 0.01,  # More stringent
+                                 minGSSize = 10,
+                                 maxGSSize = 500)
+
+    # Dotplot comparison - FEWER pathways, readable labels
+    print(dotplot(comparison,
+                  showCategory = 5,  # Only top 5 per cluster
+                  title = "GO Enrichment Comparison",
+                  font.size = 8,
+                  label_format = 50))  # Truncate long labels
+  }
+}
+```
+
+# Session Info
+
+```{r session-info}
+sessionInfo()
+```

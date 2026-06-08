@@ -1,0 +1,25 @@
+# Old / superseded script versions (kept locally, not pushed)
+*_old.R
+*_old.sh
+*_old.py
+
+# "old" folders holding superseded files of any type (kept locally)
+old/
+
+# Scripts intentionally excluded from GitHub (kept locally)
+*_nogithub.R
+*_nogithub.sh
+*_nogithub.py
+
+# Supplementary figure scripts (kept local for now)
+supplementary/
+
+# Logs and run output
+*.log
+
+# Editor / interpreter / cache cruft
+.idea/
+__pycache__/
+*.pyc
+.Rhistory
+.~lock.*#

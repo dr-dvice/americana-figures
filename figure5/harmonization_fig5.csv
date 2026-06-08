@@ -1,0 +1,30 @@
+family,canonical,sa,sa_lab,bt,bt_lab,hb,hb_lab,mp,mp_lab,fl,fl_lab
+Photoreceptors,PR,2,PR,2,PR,1,Dm9/R7.8,1,PR,2,R1.6;R7.8
+Lamina,L1,2,L1,0,,1,L1/T1/Lai,1,L1,2,L1
+Lamina,L2,1,N158/L2,2,L2,2,L2,1,L2,2,L2
+Lamina,L3,2,L3,0,,2,L3,1,L1/L2/L2/L3,2,L3
+Lamina,L4,1,L2-L4,0,,1,L4/L3,0,,2,L4
+Lamina,L5,0,,2,L5,0,,0,,2,L5
+Lamina,Lai,0,,0,,1,L1/T1/Lai,0,,2,Lai
+T neurons,T1,2,T1,2,T1,1,L1/T1/Lai,0,,2,T1
+T neurons,T2/T2a,2,T2a;T2/T3,2,T2,2,T2,0,,2,T2;T2a;T3
+T neurons,T4/T5,2,T4;T5,2,T4/T5_I;T4/T5_II,1,T4/T5_I;T4/T5_II,1,T4-5;T4/T5,2,T4a;T4b;T4c;T4d;T5a;T5b;T5c;T5d
+Medulla,Mi1,2,Mi1,2,Mi1,2,Mi1_I..III,1,Mi1/Tm1/TmY8,2,Mi1
+Medulla,Mi4,1,Dm10/Mi4,1,Mi4/Pm4,0,,1,N100/Mi4/14,2,Mi4
+Medulla,Mi9,0,,2,Mi9,2,Mi9,1,Mi9,2,Mi9
+Medulla,Mi15,2,Mi15,2,Mi15,0,,1,Mi15,2,Mi15
+Medulla,PLM,2,PLM,2,PLM,0,,0,,0,
+Transmedullary,Tm1,1,Tm1/TmY8,2,Tm1,0,,1,Tm1,2,Tm1
+Transmedullary,Tm2,0,,2,Tm2,2,Tm2,1,Tm1/Tm2,2,Tm2
+Transmedullary,Tm3,1,Tm3,0,,0,,1,Tm3,2,Tm3
+Transmedullary,Tm9,2,Tm9,2,Tm9,0,,1,Tm9,2,Tm9a;Tm9b
+Transmedullary,Tm20,0,,0,,1,Tm20/N76,1,Tm20,2,Tm20
+Transmedullary,TmY3,1,TmY3,0,,1,T4-5/TmY3,0,,2,TmY3
+Transmedullary,TmY5a,1,TmY5a,2,TmY5a,0,,1,Mi9/TmY5a/178,2,TmY5a
+Distal medulla,Dm3,0,,2,Dm3b,1,Dm3/N35,0,,2,Dm3a;Dm3b
+Distal medulla,Dm8/Dm11,2,Dm8/Dm11,2,Dm8/Dm11,2,Dm8;Dm8/Dm11,0,,2,Dm8;Dm11
+Centrifugal,C2/C3,2,C2/C3,2,C2,0,,0,,2,C2;C3
+Glia,PNG,2,PNG,2,PNG,0,,2,PNG,0,
+Glia,CTX,2,CTX,0,,0,,2,CTX,0,
+Glia,AST,2,AST,1,ENS/AST,1,AST/ENS,2,AST,0,
+Glia,ENS,2,ENS,1,ENS/AST,1,AST/ENS,2,ENS1-5,0,
