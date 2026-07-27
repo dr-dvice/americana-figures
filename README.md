@@ -36,3 +36,6 @@ project hub) and are **not redistributed here** (gonna update this when we uploa
 
 Small mapping/lookup tables that the scripts depend on **are** included
 (`harmonization*.csv`, `cluster_mappings_centralized.xlsx`).
+
+DISCLAIMER: These scripts do not represent the final published figures, only a starting point. Additional changes
+were made in Adobe Illustrator.
