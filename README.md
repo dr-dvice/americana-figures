@@ -17,9 +17,6 @@ figure4/   Other species UMAPs, conserved cell types
 figure5/   pySCENIC analysis results
 ```
 
-Figures are formatted for *Nature Ecology and Evolution* (Helvetica, 5–7 pt,
-EPS + PNG output).
-
 ## Important: data paths
 
 These scripts are provided **for transparency and reproducibility of the figure
