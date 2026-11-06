@@ -1,16 +1,16 @@
 #!/usr/bin/env python
 """
 Figure 5B (final): per-family mean per-cell AUCell for three regulons
-(TfAP-2, grn, toy) across 5 species.
+(TfAP-2, grn, Pph13) across 5 species.
 
 One row × three panels, max width 180 mm, Helvetica 5–7 pt, EPS + PNG.
 
 Data flow:
   1. For each species: load per-cell AUC (*_auc_matrix.loom) + cell-type labels
      (from h5ad or cluster_names.csv mapping).
-  2. For each fly TF (TfAP-2, grn, toy) × species, pick the species-specific
-     regulon that has the most unique target genes among those mapped to the
-     fly ortholog (parsed from the ctx *_regulons.csv).
+  2. For each fly TF (TfAP-2, grn, Pph13) × species, pick the species-specific
+     regulon mapped to that fly gene with the highest % identity to it, then the
+     most unique target genes (parsed from the ctx *_regulons.csv).
   3. Map cell-type labels → harmonised family via harmonization_fig5.csv
      (excludes honeybee cluster 21 "L1/T1/Lai" — mixed-family label).
   4. Mean AUC per (species × family) is the integral ∫ x p̂(x) dx — equivalently
@@ -44,20 +44,7 @@ MAPPING_TABLE = SCENIC / "cross_species_comparison/outputs/tf_mapping_table.csv"
 HARMONIZATION = BASE / "harmonization_fig5.csv"
 
 # ── Figure contents ──
-FIG_TFS = [("TfAP_2", "TfAP-2"), ("grn", "grn"), ("toy", "toy/ey")]
-
-# Pax6 (toy/ey) panel: the ey-vs-toy paralog call is ambiguous (near-equal protein
-# identity), so the regulon shown per species is fixed explicitly rather than auto-
-# selected. Prior picks are kept, EXCEPT honeybee: its toy-locus regulon
-# (LOC102654776) has only 2 targets and is flat across cell types, so it is replaced
-# by its informative ey-locus regulon LOC724238.
-PAX6_PANEL_REGULON = {
-    "fly": "toy",
-    "americana": "egapxtmp_018601",
-    "bumblebee": "LOC100647828",
-    "honeybee": "LOC724238",
-    "pharaonis": "toy",
-}
+FIG_TFS = [("TfAP_2", "TfAP-2"), ("grn", "grn"), ("Pph13", "Pph13")]
 
 SP_ORDER = ["fly", "americana", "bumblebee", "honeybee", "pharaonis"]
 SP_LABEL = {"fly": "D. melanogaster", "americana": "S. americana",
@@ -79,28 +66,28 @@ EXCLUDED_LABELS = {"honeybee": {"L1/T1/Lai"}}   # mixed-family atlas cluster
 CFG = {
     "fly": dict(
         h5ad="/home/davidbellini/OneDrive/gabbiani/SAMap_fly_datasets/fly_atlas/zipursky/fly_ol_2020.h5ad",
-        loom=SCENIC/"zipursky/outputs/fly_auc_matrix.loom",
-        regulons=SCENIC/"zipursky/outputs/fly_regulons.csv",
+        loom=Path("/home/davidbellini/files/workspace/SCENIC_fly_oct1/outputs/fly_auc_matrix.loom"),
+        regulons=Path("/home/davidbellini/files/workspace/SCENIC_fly_oct1/outputs/fly_regulons.csv"),
         cluster_col="subtype", cluster_names=None, harm_lab_col="fl_lab",
     ),
     "americana": dict(
-        h5ad="/home/davidbellini/files/workspace/americana_atlas3/R_analysis/sa3_labeled_apr14.h5ad",
-        loom=Path("/home/davidbellini/files/workspace/SCENIC_nextflow/nextflow/results/step8_aucell/auc_matrix.loom"),
-        regulons=Path("/home/davidbellini/files/workspace/SCENIC_nextflow/nextflow/results/step6_ctx/regulons.csv"),
+        h5ad="/home/davidbellini/files/workspace/americana_atlas3/R_analysis/sa3_labeled_aug17.h5ad",
+        loom=Path("/home/davidbellini/files/workspace/SCENIC_nextflow/nextflow/results_sep30/step8_aucell/auc_matrix.loom"),
+        regulons=Path("/home/davidbellini/files/workspace/SCENIC_nextflow/nextflow/results_sep30/step6_ctx/regulons.csv"),
         cluster_col="cell_type", cluster_names=None, harm_lab_col="sa_lab",
     ),
     "bumblebee": dict(
         h5ad="/home/davidbellini/OneDrive/gabbiani/PROJECTS/bumblebee_atlas/bumblebee_AC_v1.h5ad",
-        loom=SCENIC/"bumblebee/outputs/bumblebee_auc_matrix.loom",
-        regulons=SCENIC/"bumblebee/outputs/bumblebee_regulons.csv",
+        loom=Path("/home/davidbellini/files/workspace/SCENIC_nextflow/nextflow/results_bumblebee_oct2/step8_aucell/auc_matrix.loom"),
+        regulons=Path("/home/davidbellini/files/workspace/SCENIC_nextflow/nextflow/results_bumblebee_oct2/step6_ctx/regulons.csv"),
         cluster_col="seurat_clusters",
         cluster_names=SCENIC/"bumblebee/inputs/cluster_names.csv",
         harm_lab_col="bt_lab",
     ),
     "honeybee": dict(
         h5ad="/home/davidbellini/OneDrive/gabbiani/PROJECTS/honeybee_atlas/honeybee_ol_subset_ldn1.h5ad",
-        loom=SCENIC/"honeybee/outputs/honeybee_auc_matrix.loom",
-        regulons=SCENIC/"honeybee/outputs/honeybee_regulons.csv",
+        loom=Path("/home/davidbellini/files/workspace/SCENIC_nextflow/nextflow/results_honeybee_oct1/step8_aucell/auc_matrix.loom"),
+        regulons=Path("/home/davidbellini/files/workspace/SCENIC_nextflow/nextflow/results_honeybee_oct1/step6_ctx/regulons.csv"),
         cluster_col="seurat_clusters",
         cluster_names=SCENIC/"honeybee/inputs/cluster_names.csv",
         harm_lab_col="hb_lab",
@@ -115,7 +102,6 @@ CFG = {
     ),
 }
 
-# ── Publication style (Nature Ecol Evol: Helvetica, 5–7 pt, max 180 mm) ──
 MM_PER_IN = 25.4
 FIG_WIDTH_MM = 180
 rcParams["font.family"] = "Helvetica"
@@ -158,12 +144,18 @@ def count_targets_per_tf(regulons_csv):
     return counts
 
 
+# (species, species TF) -> % identity to its mapped fly gene; filled by load_fly_to_sp_tfs, used by select_regulons
+TF_PIDENT = {}
+
+
 def load_fly_to_sp_tfs():
     df = pd.read_csv(MAPPING_TABLE)
     out = {}
     for (sp, fg), sub in df.groupby(["species", "fly_ortholog"]):
         tfs = [str(t).replace("-", "_") for t in sub["species_tf"].tolist()]
         out[(sp, fg)] = sorted(set(tfs))
+        for t, pid in zip(tfs, sub["pident"]):
+            TF_PIDENT[(sp, t)] = float(pid)
     return out
 
 
@@ -237,9 +229,10 @@ def select_regulons(fly_tfs, fly_to_sp_tfs, target_counts, auc_regs_by_sp):
                 rows.append(dict(species=sp, fly_tf=fg, chosen=None,
                                  n_targets=0, n_candidates=0))
                 continue
-            pick = max(cands, key=lambda t: (tcnt.get(t, 0), -len(t)))
+            pick = max(cands, key=lambda t: (TF_PIDENT.get((sp, t), 0), tcnt.get(t, 0), -len(t)))
             chosen[(sp, fg)] = pick
             rows.append(dict(species=sp, fly_tf=fg, chosen=pick,
+                             pident=TF_PIDENT.get((sp, pick)),
                              n_targets=tcnt.get(pick, 0),
                              n_candidates=len(cands)))
     return chosen, pd.DataFrame(rows)
@@ -393,35 +386,23 @@ def main():
     chosen, sel_df = select_regulons(fly_tfs, fly_to_sp_tfs,
                                      target_counts, auc_regs_by_sp)
 
-    # Override the Pax6 (toy/ey) panel with the explicit per-species regulon.
-    sel_df = sel_df[sel_df["fly_tf"] != "toy"].copy()
-    for sp in SP_ORDER:
-        reg = PAX6_PANEL_REGULON[sp]
-        if reg not in auc_regs_by_sp[sp]:
-            raise SystemExit(f"Pax6 panel regulon {reg} not in {sp} AUCell loom")
-        chosen[(sp, "toy")] = reg
-        sel_df = pd.concat([sel_df, pd.DataFrame([dict(
-            species=sp, fly_tf="toy", chosen=reg,
-            n_targets=target_counts[sp].get(reg, 0), n_candidates=-1)])],
-            ignore_index=True)
-    sel_df.to_csv(OUT / "fig5b_regulon_selection.csv", index=False)
+    sel_df.to_csv(OUT / "fig5b_regulon_selection_oct1.csv", index=False)
     print(sel_df.to_string(index=False), flush=True)
 
     print("Computing per-family means...", flush=True)
     df = compute_means(fly_tfs, chosen, auc_by_sp, family_by_sp, labels_by_sp)
-    df.to_csv(OUT / "fig5b_data.csv", index=False)
+    df.to_csv(OUT / "fig5b_data_oct1.csv", index=False)
 
     print("Plotting...", flush=True)
     # Variant 1: standard z-score, (family_mean − species_mean) / species_sd
     plot_final(df, metric="z_mean_sd",
                ylabel="z = (mean − μ_sp) / σ_sp",
-               out_stem="fig5b_zscore_mean_sd")
+               out_stem="fig5b_zscore_mean_sd_oct1")
     # Variant 2: robust z-score, (family_median − species_median) / species_MAD
     plot_final(df, metric="z_median_mad",
                ylabel="z = (median − med_sp) / MAD_sp",
-               out_stem="fig5b_zscore_median_mad")
+               out_stem="fig5b_zscore_median_mad_oct1")
 
-    # Drop the legacy raw-mean-AUCell outputs if they exist (replaced by z-score variants)
     for stale in ("fig5b.eps", "fig5b.png"):
         p = OUT / stale
         if p.exists():

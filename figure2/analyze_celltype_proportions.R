@@ -1,6 +1,5 @@
 #!/usr/bin/env Rscript
-# Figure 2E — Optic lobe cell type composition: S. americana vs D. melanogaster
-# Nature Ecology and Evolution formatting
+# Figure 2F — Optic lobe cell type composition: S. americana vs D. melanogaster
 
 suppressPackageStartupMessages({
   library(Seurat)
@@ -33,28 +32,36 @@ save_png <- function(p, path) {
          units = "mm", dpi = 300)
 }
 
-so2 <- readRDS("/home/davidbellini/files/workspace/americana_atlas3/R_analysis/sa3_labeled_apr14.rds")
+so2 <- readRDS("/home/davidbellini/files/workspace/americana_atlas3/R_analysis/sa3_labeled_aug17.rds")
+
+# Drop cluster 37 (PLM) -- confirmed plasmatocyte/hemocyte contaminant, not an OL cell type.
+# Excluded from numerator AND denominator so composition compares cleanly to the
+# hemocyte-free fly (Zipursky) reference. Kept in the atlas object, removed from this analysis only.
+Idents(so2) <- "cell_type"
+so2 <- subset(so2, idents = "PLM", invert = TRUE)
 
 cluster_categories <- c(
   "PNG"  = "Glial", "ENS" = "Glial", "AST" = "Glial",
-  "CTX"  = "Glial", "G12" = "Glial", "G57" = "Glial",
+  "CTX"  = "Glial", "G57" = "Glial",
   "G74"  = "Glial", "G125" = "Glial",
   "PR"   = "Photoreceptor",
-  "C2/C3" = "Centrifugal",
-  "L1"   = "Lamina", "L3" = "Lamina", "L2-L4" = "Lamina", "N158/L2" = "Lamina",
+  "C3/C2" = "Centrifugal",
+  "L1/Dm12" = "Lamina", "L3/L4" = "Lamina", "L2" = "Lamina",
   "Mi1"  = "Medulla intrinsic", "Mi15" = "Medulla intrinsic",
   "Transmedullary_neurons1" = "Transmedullary",
   "Transmedullary_neurons2" = "Transmedullary",
   "Tm9"  = "Transmedullary", "Tm3" = "Transmedullary",
-  "Tm1/TmY8" = "Transmedullary", "TmY3" = "Transmedullary",
-  "TmY5a" = "Transmedullary", "PLM" = "Transmedullary",
-  "Dm8/Dm11" = "Distal medulla", "Dm10/Mi4" = "Distal medulla",
+  "Tm1/TmY8" = "Transmedullary", "TmY3/N5" = "Transmedullary",
+  "TmY5a" = "Transmedullary",
+  "Tm4"  = "Transmedullary",
+  "Dm8/Dm11" = "Distal medulla", "Dm10" = "Distal medulla",
+  "Dm3"  = "Distal medulla",
   "T1"   = "T neurons", "T2a" = "T neurons", "T2/T3" = "T neurons",
-  "T4"   = "T neurons", "T5"  = "T neurons",
-  "N164/N115" = "Uncharacterized", "N115/N119" = "Uncharacterized",
-  "N96"  = "Uncharacterized", "N34" = "Uncharacterized",
+  "T4"   = "T neurons", "T5"  = "T neurons", "T2" = "T neurons",
+  "N119/N179" = "Uncharacterized",
+  "N81"  = "Uncharacterized", "sa_35" = "Uncharacterized",
   "N183" = "Uncharacterized", "C86" = "Uncharacterized",
-  "C16"  = "Uncharacterized", "sa_40" = "Uncharacterized"
+  "G16/LQ" = "Uncharacterized"
 )
 
 unmapped <- setdiff(levels(so2@active.ident), names(cluster_categories))
@@ -106,6 +113,7 @@ p <- ggplot(combined_data_complete,
   scale_fill_manual(
     values = c("S. americana"    = "#E69F00",
                "D. melanogaster" = "#56B4E9"),
+    breaks = c("S. americana", "D. melanogaster"),
     labels = c(
       expression(italic("S. americana")),
       expression(italic("D. melanogaster"))
@@ -126,6 +134,6 @@ p <- ggplot(combined_data_complete,
     plot.margin        = margin(1, 1, 1, 1, "mm")
   )
 
-save_eps(p, file.path(output_dir, "fig2E_celltype_composition.eps"))
-save_png(p, file.path(output_dir, "fig2E_celltype_composition.png"))
-cat("Done: fig2E_celltype_composition.eps/.png\n")
+save_eps(p, file.path(output_dir, "fig2F_celltype_composition_aug17.eps"))
+save_png(p, file.path(output_dir, "fig2F_celltype_composition_aug17.png"))
+cat("Done: fig2F_celltype_composition_aug17.eps/.png\n")

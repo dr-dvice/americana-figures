@@ -1,7 +1,5 @@
 #!/usr/bin/env Rscript
-# Figure 2B — SAMap alignment dotplot: S. americana vs Kurmangaliyev et al. 2020 (n_top=100)
-# Nature Ecology and Evolution formatting
-# Other comparisons (supplementary) can be run by uncommenting entries in datasets list.
+# Figure 2B — SAMap alignment dotplots, S. americana vs 3 fly atlases
 
 suppressPackageStartupMessages({
   library(Seurat)
@@ -17,7 +15,7 @@ suppressPackageStartupMessages({
 options(Seurat.object.assay.version = "v3")
 
 samap_dir  <- "/home/davidbellini/files/workspace/americana_atlas3/results/samap/comparisons"
-output_dir <- "/home/davidbellini/OneDrive/gabbiani/All_paperwork/PAPERS/americana/figures/outputs/figure2"
+output_dir <- "/home/davidbellini/OneDrive/gabbiani/All_paperwork/PAPERS/americana/figures/outputs/figure2/fig2b_candidates_aug17"
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 panel_width_mm  <- 110
@@ -39,29 +37,20 @@ save_png <- function(p, path) {
          units = "mm", dpi = 300)
 }
 
-# Load Seurat object for cluster color mapping
-so <- readRDS("/home/davidbellini/files/workspace/americana_atlas3/R_analysis/sa3_labeled_apr14.rds")
+# Load Seurat object for cluster color mapping (colors keyed by cluster number)
+so <- readRDS("/home/davidbellini/files/workspace/americana_atlas3/R_analysis/sa3_labeled_aug17.rds")
 cluster_ids    <- sort(as.numeric(as.character(unique(so@meta.data$SCT_snn_res.1))))
 cluster_colors <- hue_pal()(n = length(cluster_ids))
 names(cluster_colors) <- as.character(cluster_ids)
 
-# Main figure = fly2020 (Kurmangaliyev 2020), n_top=100.
-# Supplementary comparisons: sa3 (atlas3)
-# all in `samap_dir`. Each has an n_top100 ("_ntop100") and a full ("_all") table.
-# To include one, uncomment its block
+# fly2020 = Kurmangaliyev 2020, fly2018 = Davie 2018, fly2021 = Ozel 2021
 datasets <- list(
-  list(csv = "sa3_fly2020_mapping_table_ntop100.csv",
-       out  = "fig2B_dotplot_kurmangaliyev2020_ntop100")
-  # , list(csv = "sa3_fly2020_mapping_table_all.csv",
-  #        out  = "fig2B_dotplot_kurmangaliyev2020_all")
-  # , list(csv = "sa3_fly2018_mapping_table_ntop100.csv",
-  #        out  = "fig2B_dotplot_davie2018_ntop100")
-  # , list(csv = "sa3_fly2018_mapping_table_all.csv",
-  #        out  = "fig2B_dotplot_davie2018_all")
-  # , list(csv = "sa3_fly2021_mapping_table_ntop100.csv",
-  #        out  = "fig2B_dotplot_ozel2021_ntop100")
-  # , list(csv = "sa3_fly2021_mapping_table_all.csv",
-  #        out  = "fig2B_dotplot_ozel2021_all")
+  list(csv = "sa3_fly2020_mapping_table_ntop100.csv", out = "fig2B_dotplot_kurmangaliyev2020_ntop100"),
+  list(csv = "sa3_fly2020_mapping_table_all.csv",     out = "fig2B_dotplot_kurmangaliyev2020_all"),
+  list(csv = "sa3_fly2018_mapping_table_ntop100.csv", out = "fig2B_dotplot_davie2018_ntop100"),
+  list(csv = "sa3_fly2018_mapping_table_all.csv",     out = "fig2B_dotplot_davie2018_all"),
+  list(csv = "sa3_fly2021_mapping_table_ntop100.csv", out = "fig2B_dotplot_ozel2021_ntop100"),
+  list(csv = "sa3_fly2021_mapping_table_all.csv",     out = "fig2B_dotplot_ozel2021_all")
 )
 
 for (ds in datasets) {

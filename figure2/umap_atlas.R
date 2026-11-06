@@ -1,6 +1,5 @@
 #!/usr/bin/env Rscript
-# Figure 2C — UMAP of S. americana optic lobe atlas (sa3, apr14 labels)
-# Nature Ecology and Evolution formatting
+# Figure 2C — UMAP of S. americana optic lobe atlas (sa3, aug17 labels)
 
 suppressPackageStartupMessages({
   library(Seurat)
@@ -11,7 +10,7 @@ suppressPackageStartupMessages({
 
 options(Seurat.object.assay.version = "v3")
 
-rds_path <- "/home/davidbellini/files/workspace/americana_atlas3/R_analysis/sa3_labeled_apr14.rds"
+rds_path <- "/home/davidbellini/files/workspace/americana_atlas3/R_analysis/sa3_labeled_aug17.rds"
 out_dir  <- "/home/davidbellini/OneDrive/gabbiani/All_paperwork/PAPERS/americana/figures/outputs/figure2"
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -76,5 +75,5 @@ p <- ggplot(umap_coords, aes(x = UMAP1, y = UMAP2, color = cell_type)) +
     plot.margin     = margin(1, 1, 1, 1, "mm")
   )
 
-save_eps(p, file.path(out_dir, "fig2C_umap_atlas.eps"))
-save_png(p, file.path(out_dir, "fig2C_umap_atlas.png"))
+save_eps(p, file.path(out_dir, "fig2C_umap_atlas_aug17.eps"))
+save_png(p, file.path(out_dir, "fig2C_umap_atlas_aug17.png"))

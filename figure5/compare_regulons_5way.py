@@ -22,7 +22,6 @@ from upsetplot import UpSet, from_memberships
 import warnings
 warnings.filterwarnings('ignore')
 
-# --- Nature Ecology & Evolution formatting (180 mm double-column, Helvetica 5-7 pt) ---
 MM_TO_IN = 1 / 25.4
 FIG_WIDTH_IN = 180 * MM_TO_IN
 FIG_HEIGHT_IN = 70 * MM_TO_IN
@@ -110,12 +109,8 @@ def load_homolog_map(path, species):
                 for _, row in df.iterrows()}
 
 
-# Paralogs that are not reliably distinguishable by protein identity are merged
-# to a single label so the comparison treats them as one regulon. ey/toy are the
-# two ancestral Drosophila Pax6 paralogs; the "ey-locus" hits ey and toy at near-
-# equal identity across species, so the ey-vs-toy call is arbitrary (see
-# pax6_zscores_qc.py). Merged for Figure 5.
-PARALOG_MERGE = {'ey': 'toy/ey', 'toy': 'toy/ey'}
+# Paralogs merged into a single label (none)
+PARALOG_MERGE = {}
 
 
 def _canon_fly_gene(g):

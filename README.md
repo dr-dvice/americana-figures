@@ -1,4 +1,4 @@
-# Figure scripts — Optic Lobe Evolution and GenoMiss paper
+# Figure scripts — Integrated Genome and Transcriptome Analysis Reveals 380 Million Years of Visual Evolution
 
 R and Python scripts used to generate the main-text figures (Figures 1–5) of the
 paper. These scripts consume the outputs of the analysis pipelines (single-cell
@@ -29,10 +29,11 @@ including:
 - cross-species homolog tables.
 
 The large input objects are produced by the analysis pipelines (linked from the
-project hub) and are **not redistributed here** (gonna update this when we upload our data). 
+project hub) and are **not redistributed here**. However, raw reads, the .RDS, and the
+new annotation are available in GEO accession GSE341739
 
 Small mapping/lookup tables that the scripts depend on **are** included
-(`harmonization*.csv`, `cluster_mappings_centralized.xlsx`).
+(`harmonization*.csv`).
 
 DISCLAIMER: These scripts do not represent the final published figures, only a starting point. Additional changes
 were made in Adobe Illustrator.

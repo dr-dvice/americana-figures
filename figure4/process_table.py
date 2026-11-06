@@ -1,12 +1,30 @@
-# Version 1.0, 99% CERTIFIED CLAUDE AI GENERATED
-# A helper script that displays the best scores across multiple SAMap alignment score tables
-# and creates an interactive CLI that allows user to select chosen mappings per cluster
-# also outputs chosen results and other info to a spreadsheet
+# Version 2.0 - dual whole/ntop alignment score columns
+# Output columns: cluster, new_name, target_types, whole_alignment_score,
+#                 ntop_alignment_score, source_dataset, num_alignments, status
+# NOTE: interactive resume requires a v2 (whole/ntop) CSV; convert older outputs
+#       first with migrate_output_format.py.
 import pandas as pd
 import argparse
 import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
+
+
+# Map a filename token to the source paper abbreviation shown in source_dataset.
+# Edit/extend this for other target datasets.
+PAPER_ABBREV = {
+    'fly2018': 'davie2018',
+    'fly2020': 'kurman2020',
+    'fly2021': 'ozel2021',
+}
+
+
+def paper_from_source(filename: str) -> str:
+    """Convert a source filename to its paper abbreviation (unchanged if no token matches)."""
+    for token, abbrev in PAPER_ABBREV.items():
+        if token in filename:
+            return abbrev
+    return filename
 
 
 def find_common_prefix(strings: List[str]) -> str:
@@ -89,7 +107,7 @@ def get_cluster_candidates(dataframes: Dict[str, pd.DataFrame], cluster_id: str,
 
         # Sort by score and take top candidates
         candidates.sort(key=lambda x: x['score'], reverse=True)
-        top_candidates = candidates[:10]
+        top_candidates = candidates[:5]  # Top 5 from each file
 
         # Categorize by file type (accept 'top', 'ntop', etc.)
         if 'top' in file_name.lower():
@@ -103,79 +121,70 @@ def get_cluster_candidates(dataframes: Dict[str, pd.DataFrame], cluster_id: str,
 
     return normal_candidates, ntop_candidates
 
-def _build_ntop_info(selected_types_info: List[Tuple[str, Dict]], normal_candidates: List[Dict], ntop_candidates: List[Dict]) -> Dict:
-    """Build NTOP tracking information for selected candidates
+def get_label_scores(cluster_label: str, target_type: str,
+                     normal_candidates: List[Dict], ntop_candidates: List[Dict],
+                     quiet: bool = False) -> Tuple:
+    """Look up both the whole and ntop alignment scores for a target type.
 
-    Args:
-        selected_types_info: List of tuples (file_type, candidate_dict) for each selected type
-        normal_candidates: List of candidates from normal files
-        ntop_candidates: List of candidates from NTOP files
+    Returns (whole_score, ntop_score); either may be None if the target type is
+    absent from that file type. A valid label should have both scores, so when
+    exactly one side is missing a warning is printed (unless quiet).
+    """
+    whole = next((c['score'] for c in normal_candidates if c['target_type'] == target_type), None)
+    ntop = next((c['score'] for c in ntop_candidates if c['target_type'] == target_type), None)
+
+    if not quiet and (whole is None) != (ntop is None):
+        missing = 'ntop' if ntop is None else 'whole'
+        present = 'whole' if missing == 'ntop' else 'ntop'
+        print(f"WARNING: {cluster_label} label '{target_type}' has no {missing} score "
+              f"(only {present} present); writing NA for {missing}.", file=sys.stderr)
+
+    return whole, ntop
+
+
+def _scores_for_types(cluster_label: str, target_types: List[str],
+                      normal_candidates: List[Dict], ntop_candidates: List[Dict],
+                      quiet: bool = False) -> Tuple[List, List]:
+    """Build parallel (whole_scores, ntop_scores) lists for a list of target types."""
+    whole_scores, ntop_scores = [], []
+    for t in target_types:
+        w, n = get_label_scores(cluster_label, t, normal_candidates, ntop_candidates, quiet)
+        whole_scores.append(w)
+        ntop_scores.append(n)
+    return whole_scores, ntop_scores
+
+
+def _fmt_scores(scores: List) -> str:
+    """Format a list of scores (float or None) as a comma-separated string, None -> NA."""
+    return ', '.join(f"{s:.3f}" if s is not None else "NA" for s in scores)
+
+
+def _parse_scores(cell) -> List:
+    """Parse a comma-separated score cell back into a list of floats/None ('NA' -> None)."""
+    if pd.isna(cell) or str(cell).strip() == '':
+        return []
+    return [None if s.strip() == 'NA' else float(s.strip()) for s in str(cell).split(',')]
+
+def interactive_selection(cluster_num: str, normal_candidates: List[Dict], ntop_candidates: List[Dict], args) -> Tuple[str, List[str], List[str], List, List]:
+    """Interactive selection of cluster label with separate normal (whole) and ntop columns.
+
+    The whole/ntop distinction of which option is clicked no longer affects the
+    output: for each selected label, both the whole and ntop scores are looked up.
 
     Returns:
-        Dictionary with lists of NTOP tracking info for each selected type:
-        {
-            'ntop_chosen_list': ['yes', 'no', 'yes'],
-            'alternative_file_type_list': ['WHOLE', 'NTOP', 'NA'],
-            'alternative_score_list': ['0.878', '0.789', 'NA']
-        }
+        Tuple of (selected_name, selected_types, source_files, whole_scores,
+        ntop_scores). selected_types is the literal list of chosen target-type
+        labels (a label may itself contain '/', e.g. a mixed 'Dm8/Dm11'), and
+        whole_scores/ntop_scores are positionally parallel to it. selected_name is
+        the '/'-joined display name. For "keep original" / no candidates, returns
+        (original_name, [], [], [], []).
     """
-    if not selected_types_info:
-        return {}
+    cluster_label = f"{args.source_prefix}{cluster_num}"
 
-    ntop_chosen_list = []
-    alternative_file_type_list = []
-    alternative_score_list = []
+    def scores_for(types):
+        return _scores_for_types(cluster_label, types, normal_candidates, ntop_candidates, args.quiet)
 
-    # Process each selected type individually
-    for file_type, selected_candidate in selected_types_info:
-        selected_target_type = selected_candidate['target_type']
-        ntop_chosen = (file_type == 'ntop')
-
-        # Find alternative score from the opposite file type
-        alternative_score = None
-        if ntop_chosen:
-            # Selected from NTOP, look for same target_type in normal files
-            for cand in normal_candidates:
-                if cand['target_type'] == selected_target_type:
-                    alternative_score = cand['score']
-                    break
-        else:
-            # Selected from normal, look for same target_type in NTOP files
-            for cand in ntop_candidates:
-                if cand['target_type'] == selected_target_type:
-                    alternative_score = cand['score']
-                    break
-
-        # Add to lists
-        ntop_chosen_list.append('yes' if ntop_chosen else 'no')
-
-        if alternative_score is not None:
-            alternative_file_type_list.append('WHOLE' if ntop_chosen else 'NTOP')
-            alternative_score_list.append(f"{alternative_score:.3f}")
-        else:
-            alternative_file_type_list.append('NA')
-            alternative_score_list.append('NA')
-
-    return {
-        'ntop_chosen_list': ntop_chosen_list,
-        'alternative_file_type_list': alternative_file_type_list,
-        'alternative_score_list': alternative_score_list
-    }
-
-def interactive_selection(cluster_num: str, normal_candidates: List[Dict], ntop_candidates: List[Dict], args) -> Tuple[str, List[str], Dict]:
-    """Interactive selection of cluster label with separate normal and ntop columns
-
-    Returns:
-        Tuple of (selected_name, list_of_source_files, ntop_info_dict)
-        ntop_info_dict contains: {
-            'ntop_chosen': bool,
-            'selected_type': str,
-            'selected_score': float,
-            'alternative_score': float or None,
-            'alternative_type': str ('normal' or 'ntop')
-        }
-    """
-    print(f"\n--- Cluster {args.source_prefix}{cluster_num} ---")
+    print(f"\n--- Cluster {cluster_label} ---")
 
     # Prepare display lists (top 10 from each type)
     normal_display = normal_candidates[:10]
@@ -183,7 +192,7 @@ def interactive_selection(cluster_num: str, normal_candidates: List[Dict], ntop_
 
     if not normal_display and not ntop_display:
         print("No candidates found.")
-        return f"{args.source_prefix.rstrip('_')}_{cluster_num}", [], {}
+        return f"{args.source_prefix.rstrip('_')}_{cluster_num}", [], [], [], []
 
     # Find common prefix in filenames to shorten display
     all_files = [c['file'] for c in normal_display] + [c['file'] for c in ntop_display]
@@ -242,7 +251,7 @@ def interactive_selection(cluster_num: str, normal_candidates: List[Dict], ntop_
                 best_candidates = [c for c in all_candidates if c['score'] >= args.min_threshold]
                 if not best_candidates:
                     print(f"AUTO: No candidates above min threshold ({args.min_threshold}), keeping original name")
-                    return f"{args.source_prefix.rstrip('_')}_{cluster_num}", [], {}
+                    return f"{args.source_prefix.rstrip('_')}_{cluster_num}", [], [], [], []
 
                 # Apply threshold logic
                 good_candidates = [c for c in best_candidates if c['score'] >= args.threshold]
@@ -261,61 +270,55 @@ def interactive_selection(cluster_num: str, normal_candidates: List[Dict], ntop_
                             seen_types.add(c['target_type'])
 
                     selected_names = [c['target_type'] for c in unique_candidates]
-                    selected_scores = [c['score'] for c in unique_candidates]
                     selected_files = [c['file'] for c in unique_candidates]
+                    whole_scores, ntop_scores = scores_for(selected_names)
                     result = '/'.join(selected_names)
-                    print(f"AUTO: Selected {result} (scores: {[round(s, 3) for s in selected_scores]})")
-                    return result, selected_files, {}
+                    print(f"AUTO: Selected {result} (whole: {[round(s, 3) if s is not None else None for s in whole_scores]}, "
+                          f"ntop: {[round(s, 3) if s is not None else None for s in ntop_scores]})")
+                    return result, selected_names, selected_files, whole_scores, ntop_scores
                 else:
                     best_candidate = best_candidates[0]
+                    whole_scores, ntop_scores = scores_for([best_candidate['target_type']])
                     print(f"AUTO: Selected {best_candidate['target_type']} (score: {best_candidate['score']:.3f}, above min but below main threshold)")
-                    return best_candidate['target_type'], [best_candidate['file']], {}
+                    return best_candidate['target_type'], [best_candidate['target_type']], [best_candidate['file']], whole_scores, ntop_scores
 
             # Handle multiple selections (comma-separated)
             if ',' in choice:
                 choice_nums = [int(x.strip()) for x in choice.split(',')]
                 selected_candidates = []
                 selected_files = []
-                selected_types_info = []
 
                 for choice_num in choice_nums:
                     if choice_num in option_map:
                         file_type, candidate = option_map[choice_num]
                         selected_candidates.append(candidate['target_type'])
                         selected_files.append(candidate['file'])
-                        selected_types_info.append((file_type, candidate))
                     elif choice_num == keep_original_num:
-                        return f"{args.source_prefix.rstrip('_')}_{cluster_num}", [], {}
+                        return f"{args.source_prefix.rstrip('_')}_{cluster_num}", [], [], [], []
                     else:
                         print(f"Invalid selection: {choice_num}. Please enter numbers between 1 and {keep_original_num}")
                         break
                 else:
                     # All selections were valid
                     if selected_candidates:
-                        # For multiple selections, use the first selection to determine ntop_info
-                        ntop_info = _build_ntop_info(selected_types_info, normal_candidates, ntop_candidates)
-                        # Also extract scores from selected_types_info
-                        selected_scores = [cand['score'] for _, cand in selected_types_info]
-                        ntop_info['selected_scores'] = selected_scores
-                        return '/'.join(selected_candidates), selected_files, ntop_info
+                        whole_scores, ntop_scores = scores_for(selected_candidates)
+                        return '/'.join(selected_candidates), selected_candidates, selected_files, whole_scores, ntop_scores
 
             else:
                 # Single selection
                 choice_num = int(choice)
                 if choice_num in option_map:
                     file_type, candidate = option_map[choice_num]
-                    ntop_info = _build_ntop_info([(file_type, candidate)], normal_candidates, ntop_candidates)
-                    # Include the selected score
-                    ntop_info['selected_scores'] = [candidate['score']]
-                    return candidate['target_type'], [candidate['file']], ntop_info
+                    whole_scores, ntop_scores = scores_for([candidate['target_type']])
+                    return candidate['target_type'], [candidate['target_type']], [candidate['file']], whole_scores, ntop_scores
                 elif choice_num == keep_original_num:
-                    return f"{args.source_prefix.rstrip('_')}_{cluster_num}", [], {}
+                    return f"{args.source_prefix.rstrip('_')}_{cluster_num}", [], [], [], []
                 else:
                     print(f"Please enter a number between 1 and {keep_original_num}")
 
         except EOFError:
             print("\nReached end of input. Keeping original name.")
-            return f"{args.source_prefix.rstrip('_')}_{cluster_num}", [], {}
+            return f"{args.source_prefix.rstrip('_')}_{cluster_num}", [], [], [], []
         except ValueError:
             if not choice:
                 continue
@@ -325,49 +328,30 @@ def extract_species_from_prefix(prefix: str) -> str:
     """Extract species abbreviation from prefix (e.g., 'sa_' -> 'sa')"""
     return prefix.rstrip('_')
 
-def write_progress_to_csv(cluster_mappings: Dict, original_name_clusters: Dict, csv_output_path: Path, args):
-    """Write current progress to CSV file
+def build_all_results(cluster_mappings: Dict, original_name_clusters: Dict, args) -> List[Dict]:
+    """Build the list of output-row dicts (new whole/ntop column layout).
 
-    Args:
-        cluster_mappings: Dictionary of assigned cluster mappings
-        original_name_clusters: Dictionary of clusters keeping original names
-        csv_output_path: Path to output CSV file
-        args: Command line arguments
+    Column order: cluster, new_name, target_types, whole_alignment_score,
+    ntop_alignment_score, source_dataset, num_alignments, status.
     """
     species_abbrev = extract_species_from_prefix(args.source_prefix)
     all_results = []
 
-    # Combine all cluster numbers
-    all_cluster_nums = set()
-    all_cluster_nums.update(cluster_mappings.keys())
-    all_cluster_nums.update(original_name_clusters.keys())
+    all_cluster_nums = set(cluster_mappings.keys()) | set(original_name_clusters.keys())
 
     for cluster_num in all_cluster_nums:
+        cluster_id = f"{args.source_prefix}{cluster_num}"
         if cluster_num in cluster_mappings:
             mapping = cluster_mappings[cluster_num]
-            ntop_info = mapping.get('ntop_info', {})
-
-            # Format NTOP tracking columns
-            if ntop_info:
-                ntop_chosen = ', '.join(ntop_info.get('ntop_chosen_list', []))
-                alternative_file_type = ', '.join(ntop_info.get('alternative_file_type_list', []))
-                alternative_score = ', '.join(ntop_info.get('alternative_score_list', []))
-            else:
-                ntop_chosen = 'N/A'
-                alternative_file_type = 'N/A'
-                alternative_score = 'N/A'
-
             all_results.append({
-                'cluster': f"{args.source_prefix}{cluster_num}",
+                'cluster': cluster_id,
                 'new_name': mapping['name'],
                 'target_types': ', '.join(mapping['types']),
-                'alignment_scores': ', '.join([f"{s:.3f}" for s in mapping['scores']]),
-                'source_dataset': ', '.join(mapping.get('source_files', [])),
+                'whole_alignment_score': _fmt_scores(mapping['whole_scores']),
+                'ntop_alignment_score': _fmt_scores(mapping['ntop_scores']),
+                'source_dataset': ', '.join(paper_from_source(f) for f in mapping.get('source_files', [])),
                 'num_alignments': len(mapping['types']),
                 'status': 'assigned',
-                'ntop_chosen': ntop_chosen,
-                'alternative_file_type': alternative_file_type,
-                'alternative_score': alternative_score
             })
         elif cluster_num in original_name_clusters:
             cluster_info = original_name_clusters[cluster_num]
@@ -376,57 +360,62 @@ def write_progress_to_csv(cluster_mappings: Dict, original_name_clusters: Dict, 
 
             if reason == 'below_min_threshold':
                 all_results.append({
-                    'cluster': f"{args.source_prefix}{cluster_num}",
+                    'cluster': cluster_id,
                     'new_name': original_name,
                     'target_types': cluster_info['best_target'],
-                    'alignment_scores': f"{cluster_info['best_score']:.3f}",
+                    'whole_alignment_score': _fmt_scores([cluster_info.get('whole')]),
+                    'ntop_alignment_score': _fmt_scores([cluster_info.get('ntop')]),
                     'source_dataset': '',
                     'num_alignments': 1,
                     'status': 'below_min_threshold',
-                    'ntop_chosen': 'N/A',
-                    'alternative_file_type': 'N/A',
-                    'alternative_score': 'N/A'
                 })
             elif reason == 'no_candidates':
                 all_results.append({
-                    'cluster': f"{args.source_prefix}{cluster_num}",
+                    'cluster': cluster_id,
                     'new_name': original_name,
                     'target_types': 'No alignments',
-                    'alignment_scores': '0.000',
+                    'whole_alignment_score': 'NA',
+                    'ntop_alignment_score': 'NA',
                     'source_dataset': '',
                     'num_alignments': 0,
                     'status': 'no_candidates',
-                    'ntop_chosen': 'N/A',
-                    'alternative_file_type': 'N/A',
-                    'alternative_score': 'N/A'
                 })
             elif reason == 'user_selected':
                 all_results.append({
-                    'cluster': f"{args.source_prefix}{cluster_num}",
+                    'cluster': cluster_id,
                     'new_name': original_name,
                     'target_types': 'User selected original',
-                    'alignment_scores': '',
+                    'whole_alignment_score': 'NA',
+                    'ntop_alignment_score': 'NA',
                     'source_dataset': '',
                     'num_alignments': 0,
                     'status': 'user_selected_original',
-                    'ntop_chosen': 'N/A',
-                    'alternative_file_type': 'N/A',
-                    'alternative_score': 'N/A'
                 })
 
-    if all_results:
-        results_df = pd.DataFrame(all_results)
-        # Sort by numeric cluster number for proper ordering
-        def extract_cluster_num(cluster_name):
-            num_str = cluster_name.replace(args.source_prefix, '')
-            try:
-                return int(num_str)
-            except ValueError:
-                return float('inf')
+    return all_results
 
-        results_df['sort_key'] = results_df['cluster'].apply(extract_cluster_num)
-        results_df = results_df.sort_values('sort_key').drop('sort_key', axis=1)
-        results_df.to_csv(csv_output_path, index=False)
+
+def save_results_csv(all_results: List[Dict], csv_output_path: Path, args):
+    """Sort rows by numeric cluster number and write to CSV."""
+    if not all_results:
+        return
+    results_df = pd.DataFrame(all_results)
+
+    def extract_cluster_num(cluster_name):
+        num_str = cluster_name.replace(args.source_prefix, '')
+        try:
+            return int(num_str)
+        except ValueError:
+            return float('inf')
+
+    results_df['sort_key'] = results_df['cluster'].apply(extract_cluster_num)
+    results_df = results_df.sort_values('sort_key').drop('sort_key', axis=1)
+    results_df.to_csv(csv_output_path, index=False)
+
+
+def write_progress_to_csv(cluster_mappings: Dict, original_name_clusters: Dict, csv_output_path: Path, args):
+    """Write current progress to CSV file (used for incremental saves in interactive mode)."""
+    save_results_csv(build_all_results(cluster_mappings, original_name_clusters, args), csv_output_path, args)
 
 def find_unmatched_targets(dataframes: Dict[str, pd.DataFrame], args, threshold: float = 0.3) -> List[Dict]:
     """
@@ -566,26 +555,18 @@ Examples:
                 cluster_num = row['cluster'].replace(args.source_prefix, '')
 
                 if row['status'] == 'assigned':
-                    # Parse the data back into cluster_mappings
+                    # Parse the data back into cluster_mappings (new whole/ntop layout)
                     target_types = [t.strip() for t in str(row['target_types']).split(',')]
-                    scores_str = [s.strip() for s in str(row['alignment_scores']).split(',')]
-                    scores = [float(s) for s in scores_str]
+                    whole_scores = _parse_scores(row['whole_alignment_score'])
+                    ntop_scores = _parse_scores(row['ntop_alignment_score'])
                     source_files = [f.strip() for f in str(row['source_dataset']).split(',')] if pd.notna(row['source_dataset']) and row['source_dataset'] else []
-
-                    # Reconstruct ntop_info
-                    ntop_info = {}
-                    if pd.notna(row['ntop_chosen']) and row['ntop_chosen'] != 'N/A':
-                        ntop_info['ntop_chosen_list'] = [v.strip() for v in str(row['ntop_chosen']).split(',')]
-                        ntop_info['alternative_file_type_list'] = [v.strip() for v in str(row['alternative_file_type']).split(',')]
-                        ntop_info['alternative_score_list'] = [v.strip() for v in str(row['alternative_score']).split(',')]
-                        ntop_info['selected_scores'] = scores
 
                     cluster_mappings[cluster_num] = {
                         'name': row['new_name'],
                         'types': target_types,
-                        'scores': scores,
+                        'whole_scores': whole_scores,
+                        'ntop_scores': ntop_scores,
                         'source_files': source_files,
-                        'ntop_info': ntop_info
                     }
                 elif row['status'] in ['below_min_threshold', 'no_candidates', 'user_selected_original']:
                     # Reconstruct original_name_clusters
@@ -598,7 +579,10 @@ Examples:
 
                     if row['status'] == 'below_min_threshold':
                         cluster_info['best_target'] = row['target_types']
-                        cluster_info['best_score'] = float(row['alignment_scores'])
+                        whole = _parse_scores(row['whole_alignment_score'])
+                        ntop = _parse_scores(row['ntop_alignment_score'])
+                        cluster_info['whole'] = whole[0] if whole else None
+                        cluster_info['ntop'] = ntop[0] if ntop else None
 
                     original_name_clusters[cluster_num] = cluster_info
 
@@ -655,35 +639,16 @@ Examples:
 
         if args.interactive:
             # Interactive mode
-            selected_name, selected_files, ntop_info = interactive_selection(cluster_num, normal_candidates, ntop_candidates, args)
+            selected_name, selected_types, selected_files, whole_scores, ntop_scores = interactive_selection(cluster_num, normal_candidates, ntop_candidates, args)
             if selected_name == f"{species_abbrev}_{cluster_num}":
                 original_name_clusters[cluster_num] = {'reason': 'user_selected'}
             else:
-                # Extract types and scores
-                selected_types = selected_name.split('/')
-
-                # Use scores from ntop_info if available (from interactive selection)
-                if ntop_info and 'selected_scores' in ntop_info:
-                    selected_scores = ntop_info['selected_scores']
-                else:
-                    # Fallback: try to match scores (for backwards compatibility)
-                    all_candidates = normal_candidates + ntop_candidates
-                    selected_scores = []
-                    for stype in selected_types:
-                        for cand in all_candidates:
-                            if cand['target_type'] == stype:
-                                selected_scores.append(cand['score'])
-                                break
-
-                # Use selected_files if provided, otherwise empty
-                selected_files_final = selected_files if selected_files else []
-
                 cluster_mappings[cluster_num] = {
                     'name': selected_name,
                     'types': selected_types,
-                    'scores': selected_scores if selected_scores else [0.0] * len(selected_types),
-                    'source_files': selected_files_final,
-                    'ntop_info': ntop_info
+                    'whole_scores': whole_scores,
+                    'ntop_scores': ntop_scores,
+                    'source_files': selected_files if selected_files else [],
                 }
 
             # Write progress to CSV after each selection
@@ -707,10 +672,16 @@ Examples:
 
             if not above_min_threshold:
                 # Below minimum threshold - keep original name
+                best_target = all_candidates[0]['target_type']
+                best_whole, best_ntop = get_label_scores(
+                    f"{args.source_prefix}{cluster_num}", best_target,
+                    normal_candidates, ntop_candidates, args.quiet)
                 original_name_clusters[cluster_num] = {
                     'reason': 'below_min_threshold',
                     'best_score': all_candidates[0]['score'],
-                    'best_target': all_candidates[0]['target_type']
+                    'best_target': best_target,
+                    'whole': best_whole,
+                    'ntop': best_ntop,
                 }
                 if not args.quiet:
                     print(f"{args.source_prefix}{cluster_num} -> {species_abbrev}_{cluster_num} (best: {all_candidates[0]['target_type']} score: {all_candidates[0]['score']:.3f}, below min threshold {args.min_threshold})")
@@ -737,26 +708,35 @@ Examples:
                         seen_types.add(c['target_type'])
 
                 target_types = [c['target_type'] for c in unique_candidates]
-                scores = [c['score'] for c in unique_candidates]
                 source_files = [c['file'] for c in unique_candidates]
+                whole_scores, ntop_scores = _scores_for_types(
+                    f"{args.source_prefix}{cluster_num}", target_types,
+                    normal_candidates, ntop_candidates, args.quiet)
 
                 cluster_name = '/'.join(target_types)
                 cluster_mappings[cluster_num] = {
                     'name': cluster_name,
                     'types': target_types,
-                    'scores': scores,
+                    'whole_scores': whole_scores,
+                    'ntop_scores': ntop_scores,
                     'source_files': source_files
                 }
 
                 if not args.quiet:
-                    print(f"{args.source_prefix}{cluster_num} -> {cluster_name} (scores: {[round(s, 3) for s in scores]})")
+                    print(f"{args.source_prefix}{cluster_num} -> {cluster_name} "
+                          f"(whole: {[round(s, 3) if s is not None else None for s in whole_scores]}, "
+                          f"ntop: {[round(s, 3) if s is not None else None for s in ntop_scores]})")
             else:
                 # Above min threshold but below main threshold - assign best candidate
                 best_candidate = above_min_threshold[0]
+                whole_scores, ntop_scores = _scores_for_types(
+                    f"{args.source_prefix}{cluster_num}", [best_candidate['target_type']],
+                    normal_candidates, ntop_candidates, args.quiet)
                 cluster_mappings[cluster_num] = {
                     'name': best_candidate['target_type'],
                     'types': [best_candidate['target_type']],
-                    'scores': [best_candidate['score']],
+                    'whole_scores': whole_scores,
+                    'ntop_scores': ntop_scores,
                     'source_files': [best_candidate['file']]
                 }
 
@@ -771,8 +751,8 @@ Examples:
 
         for cluster_num in sorted(cluster_mappings.keys(), key=lambda x: (0, int(x)) if x.isdigit() else (1, x)):
             mapping = cluster_mappings[cluster_num]
-            score_str = ', '.join([f"{s:.3f}" for s in mapping['scores']])
-            print(f"{args.source_prefix}{cluster_num} -> {mapping['name']} (scores: {score_str})")
+            print(f"{args.source_prefix}{cluster_num} -> {mapping['name']} "
+                  f"(whole: [{_fmt_scores(mapping['whole_scores'])}], ntop: [{_fmt_scores(mapping['ntop_scores'])}])")
 
         print("\n" + "="*60)
         print("CLUSTERS KEEPING ORIGINAL NAMES")
@@ -835,99 +815,10 @@ Examples:
 
     # Save results - include all clusters
     csv_output_path = output_dir / args.csv_output
-    all_results = []
-
-    # Create a combined list of all cluster numbers for proper sorting
-    all_cluster_nums = set()
-    all_cluster_nums.update(cluster_mappings.keys())
-    all_cluster_nums.update(original_name_clusters.keys())
-
-    for cluster_num in all_cluster_nums:
-        if cluster_num in cluster_mappings:
-            mapping = cluster_mappings[cluster_num]
-            ntop_info = mapping.get('ntop_info', {})
-
-            # Format NTOP tracking columns
-            if ntop_info:
-                ntop_chosen = ', '.join(ntop_info.get('ntop_chosen_list', []))
-                alternative_file_type = ', '.join(ntop_info.get('alternative_file_type_list', []))
-                alternative_score = ', '.join(ntop_info.get('alternative_score_list', []))
-            else:
-                # No NTOP info (e.g., auto mode)
-                ntop_chosen = 'N/A'
-                alternative_file_type = 'N/A'
-                alternative_score = 'N/A'
-
-            all_results.append({
-                'cluster': f"{args.source_prefix}{cluster_num}",
-                'new_name': mapping['name'],
-                'target_types': ', '.join(mapping['types']),
-                'alignment_scores': ', '.join([f"{s:.3f}" for s in mapping['scores']]),
-                'source_dataset': ', '.join(mapping.get('source_files', [])),
-                'num_alignments': len(mapping['types']),
-                'status': 'assigned',
-                'ntop_chosen': ntop_chosen,
-                'alternative_file_type': alternative_file_type,
-                'alternative_score': alternative_score
-            })
-        elif cluster_num in original_name_clusters:
-            cluster_info = original_name_clusters[cluster_num]
-            reason = cluster_info['reason']
-            original_name = f"{species_abbrev}_{cluster_num}"
-
-            if reason == 'below_min_threshold':
-                all_results.append({
-                    'cluster': f"{args.source_prefix}{cluster_num}",
-                    'new_name': original_name,
-                    'target_types': cluster_info['best_target'],
-                    'alignment_scores': f"{cluster_info['best_score']:.3f}",
-                    'source_dataset': '',
-                    'num_alignments': 1,
-                    'status': 'below_min_threshold',
-                    'ntop_chosen': 'N/A',
-                    'alternative_file_type': 'N/A',
-                    'alternative_score': 'N/A'
-                })
-            elif reason == 'no_candidates':
-                all_results.append({
-                    'cluster': f"{args.source_prefix}{cluster_num}",
-                    'new_name': original_name,
-                    'target_types': 'No alignments',
-                    'alignment_scores': '0.000',
-                    'source_dataset': '',
-                    'num_alignments': 0,
-                    'status': 'no_candidates',
-                    'ntop_chosen': 'N/A',
-                    'alternative_file_type': 'N/A',
-                    'alternative_score': 'N/A'
-                })
-            elif reason == 'user_selected':
-                all_results.append({
-                    'cluster': f"{args.source_prefix}{cluster_num}",
-                    'new_name': original_name,
-                    'target_types': 'User selected original',
-                    'alignment_scores': '',
-                    'source_dataset': '',
-                    'num_alignments': 0,
-                    'status': 'user_selected_original',
-                    'ntop_chosen': 'N/A',
-                    'alternative_file_type': 'N/A',
-                    'alternative_score': 'N/A'
-                })
+    all_results = build_all_results(cluster_mappings, original_name_clusters, args)
 
     if all_results:
-        results_df = pd.DataFrame(all_results)
-        # Sort by numeric cluster number for proper ordering
-        def extract_cluster_num(cluster_name):
-            num_str = cluster_name.replace(args.source_prefix, '')
-            try:
-                return int(num_str)
-            except ValueError:
-                return float('inf')  # Put non-numeric cluster names at the end
-
-        results_df['sort_key'] = results_df['cluster'].apply(extract_cluster_num)
-        results_df = results_df.sort_values('sort_key').drop('sort_key', axis=1)
-        results_df.to_csv(csv_output_path, index=False)
+        save_results_csv(all_results, csv_output_path, args)
         print(f"\nResults saved to {csv_output_path}")
 
         assigned_count = len([r for r in all_results if r['status'] == 'assigned'])

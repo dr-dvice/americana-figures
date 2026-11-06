@@ -182,6 +182,6 @@ p <- DimPlot(so2, reduction = "umap", label = TRUE, label.size = 2.5,
               label.box = TRUE, repel = TRUE) +
    NoLegend() + NoAxes() + ggtitle("Bumblebee Young Adult Whole Brain Atlas")
 p
-ggsave("../../outputs/figure4/UMAP_bumblebee_AC_v1.pdf", p, width = 10, height = 8)
-ggsave("../../outputs/figure4/UMAP_bumblebee_AC_v1.png", p, width = 10, height = 8)
-# saveRDS(so, out_rds)
+#ggsave("../../outputs/figure4/UMAP_bumblebee_AC_v1.pdf", p, width = 10, height = 8)
+#ggsave("../../outputs/figure4/UMAP_bumblebee_AC_v1.png", p, width = 10, height = 8)
+saveRDS(so, out_rds)

@@ -1,6 +1,5 @@
 #!/usr/bin/env Rscript
 # Figure 2A (vertical) — featureCounts assignment: Bellini2026 vs NCBI R100
-# Nature Ecology and Evolution formatting — vertical bar orientation
 
 suppressPackageStartupMessages({
   library(ggplot2)

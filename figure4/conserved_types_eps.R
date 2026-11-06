@@ -46,11 +46,21 @@ conf_long <- harm %>%
     ), levels = c("absent", "tentative", "confident"))
   )
 
-# Order canonical types within each family by n_confident desc, then n_any desc
+# Within-family row order; families are alphabetical
+manual_order <- c(
+  "PR",
+  "L1", "L2", "L3", "L4", "L5",
+  "T1", "T2/T2a", "T4/T5",
+  "Mi1", "Mi4", "Mi9", "Mi15",
+  "Tm1", "Tm2", "TmY5a", "Tm9", "Other Tms",
+  "Dm", "Dm8/Dm11",
+  "C2/C3",
+  "PNG", "CTX", "AST/ENS"
+)
 row_order <- conf_long %>%
-  group_by(family, canonical) %>%
-  summarise(n_conf = sum(confidence == 2), n_any = sum(confidence > 0), .groups = "drop") %>%
-  arrange(family, -n_conf, -n_any)
+  distinct(family, canonical) %>%
+  mutate(man = match(canonical, manual_order)) %>%
+  arrange(family, man)
 
 conf_long <- conf_long %>%
   mutate(canonical = factor(canonical, levels = rev(row_order$canonical)))
@@ -81,14 +91,14 @@ p <- ggplot(conf_long, aes(species, canonical, fill = conf_lbl)) +
   ) +
   guides(fill = guide_legend(nrow = 1))
 
-postscript(file.path(out_dir, "figD_conservation_tiles.eps"),
+postscript(file.path(out_dir, "figD_conservation_tiles_aug17.eps"),
            width = panel_width_mm * mm_to_in, height = panel_height_mm * mm_to_in,
            family = "Helvetica", paper = "special",
            onefile = FALSE, horizontal = FALSE)
 print(p)
 dev.off()
 
-ggsave(file.path(out_dir, "figD_conservation_tiles.png"), p,
+ggsave(file.path(out_dir, "figD_conservation_tiles_aug17.png"), p,
        width = panel_width_mm, height = panel_height_mm,
        units = "mm", dpi = 300, bg = "white")
 

@@ -2,7 +2,6 @@
 """
 FIG 1C
 Plot percentage of gene pairs classified as MERGED, per composite score interval.
-Nature Ecology and Evolution — Helvetica, 90x60mm, EPS + PNG.
 """
 
 import matplotlib

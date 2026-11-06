@@ -1,6 +1,5 @@
 #!/usr/bin/env Rscript
 # Figure 2D — TF expression violin plots in S. americana T neurons
-# Nature Ecology and Evolution formatting
 
 suppressPackageStartupMessages({
   library(Seurat)

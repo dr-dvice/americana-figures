@@ -1,26 +1,25 @@
 "family","canonical","sa","sa_lab","bt","bt_lab","hb","hb_lab","mp","mp_lab"
 "Photoreceptors","PR",2,"PR",1,"PR+",1,"Dm9/R7.8",1,"PR"
-"Lamina","L1",2,"L1",1,"L1/L2/L3",1,"L1/T1/Lai",1,"L1"
-"Lamina","L2",1,"N158/L2",1,"L1/L2/L3",2,"L2",1,"L2"
-"Lamina","L3",2,"L3",1,"L1/L2/L3",2,"L3",1,"L1/L2/L2/L3"
-"Lamina","L4",1,"L2-L4",0,,1,"L4/L3",0,
+"Lamina","L1",2,"L1/Dm12",1,"L1/L2/L3",1,"L1/T1/Lai",1,"L1"
+"Lamina","L2",1,"L2",1,"L1/L2/L3",2,"L2",1,"L2"
+"Lamina","L3",2,"L3/L4",1,"L1/L2/L3",2,"L3",1,"L1/L2/L2/L3"
+"Lamina","L4",0,,0,,1,"L4/L3",0,
 "Lamina","L5",0,,2,"L5",0,,0,
 "T neurons","T1",2,"T1",2,"T1",1,"L1/T1/Lai",0,
-"T neurons","T2/T2a",2,"T2a;T2/T3",2,"T2/T2a",2,"T2",0,
-"T neurons","T4/T5",2,"T4;T5",2,"T4;T5",1,"T4/T5_I;T4/T5_II",1,"T4-5;T4/T5"
+"T neurons","T2/T2a",2,"T2;T2a;T2/T3",2,"T2/T2a",2,"T2",0,
+"T neurons","T4/T5",2,"T4;T5",2,"T4;T5",1,"T4/T5_I;T4/T5_II",2,"T4-5;T4/T5"
 "Medulla","Mi1",2,"Mi1",2,"Mi1;Mi1/Tm2",2,"Mi1_I-III",1,"Mi1/Tm1/TmY8"
-"Medulla","Mi4",1,"Dm10/Mi4",1,"Mi4",0,,1,"N100/Mi4/14"
+"Medulla","Mi4",0,,1,"Mi4",0,,1,"N100/Mi4/14"
 "Medulla","Mi9",0,,1,"Mi9",2,"Mi9",1,"Mi9"
 "Medulla","Mi15",2,"Mi15",1,"Mi15",0,,1,"Mi15"
-"Medulla","PLM",2,"PLM",1,"PLM",0,,0,
 "Transmedullary","Tm1",1,"Tm1/TmY8",1,"Tm1/Tm2/Tm4",0,,1,"Tm1"
 "Transmedullary","Tm2",0,,2,"Tm2;Tm1/Tm2/Tm4",2,"Tm2",1,"Tm1/Tm2"
 "Transmedullary","Tm9",2,"Tm9",1,"Tm9/TmY3",0,,1,"Tm9"
 "Transmedullary","TmY5a",1,"TmY5a",2,"TmY5a/Tm29;TmY5a/N116",0,,1,"Mi9/TmY5a/178"
-"Transmedullary","Other Tms",1,"Tm3;TmY3",0,,1,"Tm20/N76;TmY3",1,"Tm3;Tm20"
-"Distal medulla","Dm3",0,,2,"Dm3",1,"Dm3/N35",0,
+"Transmedullary","Other Tms",1,"Tm3;TmY3/N5;Tm4",0,,1,"Tm20/N76;TmY3",1,"Tm3;Tm20"
+"Distal medulla","Dm",2,"Dm3;Dm10",2,"Dm3",1,"Dm2;Dm3/N35",0,
 "Distal medulla","Dm8/Dm11",2,"Dm8/Dm11",2,"Dm8/Dm11",2,"Dm8;Dm8/Dm11",0,
-"Centrifugal","C2/C3",2,"C2/C3",2,"C2;fl_123/C3",0,,0,
-"Glia","PNG",2,"PNG",1,"PNG",0,,2,"PNG"
+"Centrifugal","C2/C3",2,"C3/C2",2,"C2;fl_123/C3",0,,0,
+"Glia","PNG",2,"PNG",2,"PNG",0,,2,"PNG"
 "Glia","CTX",2,"CTX",0,,0,,2,"CTX"
-"Glia","AST/ENS",2,"AST;ENS",1,"ENS/AST",1,"AST/ENS",2,"AST;ENS1-5"
+"Glia","AST/ENS",2,"AST;ENS",2,"ENS/AST",2,"AST/ENS",2,"AST;ENS1-5"
